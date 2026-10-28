@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Margin</title>
+<script src="lib/pdf.min.js"></script>
+<style>
+:root{
+  --paper:#EEF1F5; --card:#FFFFFF; --ink:#18233A; --muted:#566176; --rule:#D3DAE4;
+  --hl:#FBE36A; --pen:#C2362B; --btn:#18233A; --btn-ink:#FFFFFF;
+  --serif:"Noto Serif", Georgia, serif;
+  --sans:system-ui, -apple-system, Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --paper:#10141B; --card:#1A2029; --ink:#E5E9F0; --muted:#9BA5B6; --rule:#2C3542;
+    --hl:#6E5C10; --pen:#FF7D6E; --btn:#E5E9F0; --btn-ink:#10141B; color-scheme: dark; }
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent}
+main{max-width:680px;margin:0 auto;padding:18px 16px 40px}
+h1{font-family:var(--serif);font-weight:600;font-size:1.8rem;line-height:1.15;margin:6px 0 10px}
+.lede{color:var(--muted);margin:0 0 12px}
+.hidden{display:none!important}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 18px;background:var(--btn);color:var(--btn-ink);min-height:44px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--rule)}
+button.small{padding:6px 12px;min-height:36px;font-size:.9rem}
+button:disabled{opacity:.45}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--hl);outline-offset:2px}
+select,input[type=number]{font:inherit;color:var(--ink);background:var(--card);border:1.5px solid var(--rule);border-radius:10px;padding:8px 10px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted)} .small-t{font-size:.88rem}
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:14px 16px;margin:12px 0}
+.panel h2{font-family:var(--serif);font-size:1.05rem;font-weight:600;margin:0 0 4px}
+.drop{display:block;border:2px dashed var(--rule);border-radius:14px;padding:24px 16px;text-align:center;background:var(--card);margin:16px 0}
+.drop strong{font-family:var(--serif);font-size:1.1rem;display:block}
+.drop input{position:absolute;opacity:0;width:1px;height:1px}
+.book{display:flex;width:100%;text-align:left;gap:14px;align-items:center;background:var(--card);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:14px 16px;margin:10px 0;font-weight:400}
+.book .spine{flex:none;width:10px;align-self:stretch;border-radius:3px;background:var(--hl)}
+.book b{font-family:var(--serif);font-weight:600;font-size:1.08rem;display:block}
+.rbar{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.rtitle{font-family:var(--serif);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pagewrap{position:relative;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 8px 24px -14px rgba(20,30,50,.45);min-height:200px;touch-action:pan-y}
+.pagewrap canvas{display:block;width:100%;height:auto}
+.pagewrap .wait{position:absolute;inset:0;margin:0;display:flex;align-items:center;justify-content:center;color:#566176;font-family:var(--serif);font-style:italic}
+.pnav{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin:12px 0}
+.pnum{display:flex;gap:6px;align-items:center;justify-content:center}
+.pnum input{width:72px;text-align:center}
+.now{font-family:var(--serif);color:var(--muted);margin:10px 0 0;min-height:1.5em}
+.hl{background:linear-gradient(transparent 55%,var(--hl) 55%,var(--hl) 92%,transparent 92%)}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px}
+</style>
+</head>
+<body>
+<main>
+  <section id="shelf">
+    <h1>Margin</h1>
+    <p class="lede">Read your books page by page and have them <span class="hl">read aloud</span>, all on your phone. Claude buttons send a request to Margin in Claude, which opens over the app.</p>
+    <div id="books"></div>
+    <label class="drop">
+      <strong>Add a PDF</strong>
+      <span class="muted small-t">Scans work too: text is recognized on your phone</span>
+      <input type="file" id="file" accept="application/pdf,.pdf">
+    </label>
+    <p class="muted small-t hidden" id="shelfMsg"></p>
+    <div class="panel">
+      <h2>In Claude</h2>
+      <p class="muted small-t" style="margin:0">Your concepts and quiz scores live in Margin in Claude.</p>
+      <div class="grid3">
+        <button class="ghost" data-claude="library">My library</button>
+        <button class="ghost" data-claude="play">Play the quiz game</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="reader" class="hidden">
+    <div class="rbar"><button class="small ghost" id="rBack">Books</button><span class="rtitle" id="rTitle"></span></div>
+    <div class="pagewrap" id="pageWrap"><canvas id="pageCanvas"></canvas><p class="wait" id="pageLoading">Opening…</p></div>
+    <div class="pnav">
+      <button class="ghost" id="prev">Previous</button>
+      <label class="pnum"><input type="number" id="pageNum" min="1" aria-label="Page number"><span id="pageOf" class="muted"></span></label>
+      <button id="next">Next</button>
+    </div>
+
+    <div class="panel">
+      <h2>Ask Claude about this page</h2>
+      <div class="grid3">
+        <button data-req="find">Find concepts</button>
+        <button class="ghost" data-req="quiz">Quiz me on this page</button>
+        <button class="ghost" data-req="pooh">Pooh story</button>
+      </div>
+      <p class="muted small-t" style="margin:10px 0 0" id="reqMsg">Sends this page’s text, recognized on your phone, to Margin in Claude, which does the job right away. Close it to come back here.</p>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <button id="lPlay">Read aloud from here</button>
+        <button class="ghost hidden" id="lPause">Pause</button>
+        <button class="ghost hidden" id="lStop">Stop</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="row small-t" style="gap:6px">Speed <select id="lRate"><option>0.8</option><option>0.9</option><option selected>1</option><option>1.15</option><option>1.3</option><option>1.5</option></select></label>
+      </div>
+      <p class="now" id="lNow">Uses your phone’s voice, so it’s free. Pages turn as it reads.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+const ARTIFACT_URL = 'https://claude.ai/artifact/R3yTeoNqa7GbxfzrEaBffV';
+const $ = s => document.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const KEY = 'margin-native-v1';
+let S = { docs: [], rate: 1 };
+try { const r = localStorage.getItem(KEY); if (r) S = Object.assign(S, JSON.parse(r)); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+
+/* ---------- Storage for PDFs and recognized text (IndexedDB, on the phone) ---------- */
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('margin', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('files');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function fileOp(mode, fn) {
+  try {
+    const db = await idb();
+    return await new Promise(res => {
+      const t = db.transaction('files', mode); const q = fn(t.objectStore('files')); let out = null;
+      if (q) q.onsuccess = () => { out = q.result || null; };
+      t.oncomplete = () => res(out); t.onerror = () => res(null); t.onabort = () => res(null);
+    });
+  } catch (e) { return null; }
+}
+const fileGet = id => fileOp('readonly', st => st.get(id));
+const filePut = (id, v) => fileOp('readwrite', st => st.put(v, id));
+const fileDel = id => fileOp('readwrite', st => st.delete(id));
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
+
+/* ---------- Opening Margin in Claude ---------- */
+function openClaude(hash) {
+  const url = ARTIFACT_URL + (hash ? '#' + hash : '');
+  if (window.Native) Native.openUrl(url); else window.open(url, '_blank');
+}
+document.querySelectorAll('[data-claude]').forEach(b => b.onclick = () => openClaude(b.dataset.claude));
+
+/* ---------- Shelf ---------- */
+function shelfMsg(t) { $('#shelfMsg').textContent = t || ''; $('#shelfMsg').classList.toggle('hidden', !t); }
+function renderShelf() {
+  const box = $('#books'); box.textContent = '';
+  S.docs.forEach(d => {
+    const b = document.createElement('button'); b.className = 'book';
+    b.innerHTML = '<span class="spine"></span><span style="flex:1;min-width:0"><b></b><span class="muted small-t sub"></span></span><span class="muted small-t rm" role="button" aria-label="Remove book" style="padding:8px">✕</span>';
+    b.querySelector('b').textContent = d.title;
+    b.querySelector('.sub').textContent = d.pageCount ? `At page ${d.lastPage || 1} of ${d.pageCount}` : 'Not opened yet';
+    b.onclick = e => {
+      if (e.target.classList.contains('rm')) {
+        if (confirm('Remove “' + d.title + '” from this phone?')) { S.docs = S.docs.filter(x => x.id !== d.id); save(); fileDel(d.id); renderShelf(); }
+        return;
+      }
+      openBook(d);
+    };
+    box.appendChild(b);
+  });
+}
+
+let pdf = null, curDoc = null, curPage = 1, renderTask = null;
+async function openBook(doc) {
+  shelfMsg('Opening…');
+  const buf = await fileGet(doc.id);
+  if (!buf) { shelfMsg('This book’s file is missing. Add the PDF again.'); return; }
+  try { pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf.slice(0)), isEvalSupported: false }).promise; }
+  catch (e) { shelfMsg('This file couldn’t be opened as a PDF.'); return; }
+  shelfMsg('');
+  curDoc = doc; doc.pageCount = pdf.numPages; save();
+  $('#shelf').classList.add('hidden'); $('#reader').classList.remove('hidden');
+  $('#rTitle').textContent = doc.title;
+  $('#pageNum').max = pdf.numPages; $('#pageOf').textContent = 'of ' + pdf.numPages;
+  showPage(Math.min(pdf.numPages, doc.lastPage || 1));
+}
+$('#file').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  shelfMsg('Adding…');
+  const buf = await f.arrayBuffer();
+  // The title is how Margin in Claude matches pages to the same book, so keep it stable.
+  const title = (f.name || 'Book').replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ');
+  let doc = S.docs.find(d => d.title === title);
+  if (!doc) { doc = { id: uid(), title, lastPage: 1 }; S.docs.push(doc); }
+  await filePut(doc.id, buf); save();
+  openBook(doc);
+});
+function closeBook() {
+  stopListening(); curDoc = null; pdf = null;
+  $('#reader').classList.add('hidden'); $('#shelf').classList.remove('hidden'); renderShelf();
+}
+$('#rBack').onclick = closeBook;
+window.nativeBack = () => { if (curDoc) { closeBook(); return true; } return false; };
+
+/* ---------- Pages ---------- */
+async function showPage(p) {
+  if (!pdf) return;
+  p = Math.max(1, Math.min(pdf.numPages, p | 0));
+  curPage = p; curDoc.lastPage = p; save();
+  $('#pageNum').value = p;
+  $('#prev').disabled = p <= 1; $('#next').disabled = p >= pdf.numPages;
+  try {
+    if (renderTask) { renderTask.cancel(); renderTask = null; }
+    $('#pageLoading').classList.remove('hidden');
+    const page = await pdf.getPage(p);
+    if (curPage !== p) return;
+    const w = Math.max(280, $('#pageWrap').clientWidth) * Math.min(2, window.devicePixelRatio || 1);
+    const vp = page.getViewport({ scale: w / page.getViewport({ scale: 1 }).width });
+    const c = $('#pageCanvas'); c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    renderTask = page.render({ canvasContext: ctx, viewport: vp });
+    await renderTask.promise; renderTask = null;
+    $('#pageLoading').classList.add('hidden');
+  } catch (e) {}
+}
+function userGo(p) { stopListening(); showPage(p); }
+$('#prev').onclick = () => userGo(curPage - 1);
+$('#next').onclick = () => userGo(curPage + 1);
+$('#pageNum').addEventListener('change', e => userGo(parseInt(e.target.value) || 1));
+(() => { let x0 = null, y0 = 0; const w = $('#pageWrap');
+  w.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  w.addEventListener('touchend', e => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) userGo(curPage + (dx < 0 ? 1 : -1)); }, { passive: true });
+})();
+
+/* ---------- Page text: text layer, else OCR on the phone; cached ---------- */
+async function getPageText(doc, p, onStatus) {
+  const key = 't:' + doc.id + ':' + p;
+  const cached = await fileGet(key);
+  if (cached && typeof cached === 'object' && 'text' in cached) return cached;
+  let text = '';
+  try { const pg = await pdf.getPage(p); const tc = await pg.getTextContent(); text = tc.items.map(i => i.str + (i.hasEOL ? '\n' : ' ')).join('').trim(); } catch (e) {}
+  let ocr = false;
+  if (text.replace(/\s/g, '').length < 150) {
+    if (onStatus) onStatus(ocrReady ? 'Recognizing text' : 'Starting text recognition');
+    const eng = await getOcr();
+    if (onStatus) onStatus('Recognizing text');
+    text = (await eng.recognize(await pageBytes(p))).trim(); ocr = true;
+  }
+  const out = { text, ocr };
+  filePut(key, out);
+  return out;
+}
+async function pageBytes(p) {
+  const page = await pdf.getPage(p);
+  const vp = page.getViewport({ scale: Math.min(3, 1250 / page.getViewport({ scale: 1 }).width) });
+  const c = document.createElement('canvas'); c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/* ---------- Tesseract, bundled in the app ---------- */
+let ocrEngine = null, ocrReady = false;
+const simd = (() => { try { return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11])); } catch (e) { return false; } })();
+const CORE = new URL(simd ? 'lib/tesseract-core-simd-lstm.wasm.js' : 'lib/tesseract-core-lstm.wasm.js', location.href).href;
+const MODEL = new URL('lib/eng.traineddata', location.href).href;
+function getOcr() {
+  if (!ocrEngine) ocrEngine = startOcr().then(e => { ocrReady = true; return e; }, err => { ocrEngine = null; throw err; });
+  return ocrEngine;
+}
+async function startOcr() {
+  const model = new Uint8Array(await (await fetch(MODEL)).arrayBuffer());
+  try { return await startWorker(model); } catch (e) { return await startMain(model); }
+}
+function startWorker(model) {
+  return new Promise((res, rej) => {
+    const src = "self.onmessage=async e=>{const d=e.data;try{if(d.t==='init'){importScripts(d.core);self.M=await TesseractCore();M.FS.writeFile('/eng.traineddata',d.model);self.api=new M.TessBaseAPI();if(api.Init('/','eng')!==0)throw new Error('init');api.SetVariable('tessedit_pageseg_mode','3');postMessage({t:'ready'});}else{M.FS.writeFile('/input',d.img);if(api.SetImageFile(1,0)===1)throw new Error('image');api.Recognize(null);postMessage({t:'text',id:d.id,text:api.GetUTF8Text()});}}catch(err){postMessage({t:'err',id:d.id,msg:String(err&&err.message||err)});}};";
+    let w; try { w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' }))); } catch (e) { rej(e); return; }
+    const pending = new Map(); let n = 0, ready = false;
+    const timer = setTimeout(() => { w.terminate(); rej(new Error('timeout')); }, 120000);
+    w.onerror = e => { if (!ready) { clearTimeout(timer); w.terminate(); rej(e); } else { pending.forEach(p => p.no('worker')); pending.clear(); } };
+    w.onmessage = e => {
+      const d = e.data;
+      if (d.t === 'ready') { ready = true; clearTimeout(timer); res({ recognize: img => new Promise((ok, no) => { const id = ++n; pending.set(id, { ok, no }); w.postMessage({ t: 'ocr', id, img }, [img.buffer]); }) }); }
+      else if (d.t === 'text') { const p = pending.get(d.id); pending.delete(d.id); if (p) p.ok(d.text); }
+      else if (d.t === 'err') { if (d.id == null) { clearTimeout(timer); w.terminate(); rej(new Error(d.msg)); } else { const p = pending.get(d.id); pending.delete(d.id); if (p) p.no(d.msg); } }
+    };
+    w.postMessage({ t: 'init', core: CORE, model: model.slice() });
+  });
+}
+async function startMain(model) {
+  if (!window.TesseractCore) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = CORE; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  const M = await TesseractCore(); M.FS.writeFile('/eng.traineddata', model);
+  const api = new M.TessBaseAPI(); if (api.Init('/', 'eng') !== 0) throw new Error('init');
+  api.SetVariable('tessedit_pageseg_mode', '3');
+  let chain = Promise.resolve();
+  return { recognize: img => (chain = chain.then(async () => { await new Promise(r => setTimeout(r, 50)); M.FS.writeFile('/input', img); if (api.SetImageFile(1, 0) === 1) throw new Error('image'); api.Recognize(null); return api.GetUTF8Text(); })) };
+}
+
+/* ---------- Read aloud: Android's own text-to-speech ---------- */
+const native = window.Native || null;
+let listening = false, listenTok = 0, paused = false, resumeFrom = null;
+const waiters = new Map();
+window.__ttsDone = (id, ok) => { const w = waiters.get(id); if (w) { waiters.delete(id); w(ok); } };
+function say(text, tok) {
+  return new Promise(res => {
+    if (tok !== listenTok) return res(false);
+    if (native) { const id = uid(); waiters.set(id, res); native.speak(text, S.rate || 1, id); }
+    else if (window.speechSynthesis) { const u = new SpeechSynthesisUtterance(text); u.rate = S.rate || 1; u.lang = 'en-GB'; u.onend = () => res(true); u.onerror = () => res(false); speechSynthesis.speak(u); }
+    else res(false);
+  });
+}
+function hush() {
+  if (native) native.stopSpeaking(); else if (window.speechSynthesis) speechSynthesis.cancel();
+  waiters.forEach(w => w(false)); waiters.clear();
+}
+function speechText(t) {
+  const lines = t.split('\n');
+  const isHeader = l => { const x = l.trim(); return x.length < 70 && (/^\d+$/.test(x) || (/\d/.test(x) && /chapter|section|^\d+\s+[A-Z]|[A-Za-z]\s+\d+$/.test(x))); };
+  const noisy = l => { const x = l.trim(); if (!x) return false; const letters = (x.match(/[A-Za-z]/g) || []).length; return letters / x.length < 0.55 || (/[~|<>]/.test(x) && x.length < 40); };
+  while (lines.length && !lines[0].trim()) lines.shift();
+  if (lines.length && (isHeader(lines[0]) || noisy(lines[0]))) lines.shift();
+  for (let i = lines.length - 1; i >= 0; i--) if (noisy(lines[i]) && lines[i].trim().length < 25) lines.splice(i, 1);
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  if (lines.length && /^\s*\d+\s*$/.test(lines[lines.length - 1])) lines.pop();
+  return lines.join('\n').replace(/(\w)-\n(\w)/g, '$1$2').replace(/\n{2,}/g, '\u00b6').replace(/\n/g, ' ').replace(/\u00b6/g, '\n').replace(/[ \t]+/g, ' ').trim();
+}
+function speechChunks(t) {
+  const out = [];
+  t.split('\n').forEach(par => {
+    const sents = par.match(/[^.!?]+[.!?]+["’”)]*\s*|[^.!?]+$/g) || [];
+    let buf = '';
+    sents.forEach(x => {
+      if ((buf + x).length > 220 && buf) { out.push(buf.trim()); buf = ''; }
+      while (x.length > 220) { let cut = x.lastIndexOf(',', 220); if (cut < 80) cut = x.lastIndexOf(' ', 220); if (cut < 40) cut = 220; out.push(x.slice(0, cut + 1).trim()); x = x.slice(cut + 1); }
+      buf += x;
+    });
+    if (buf.trim()) out.push(buf.trim());
+  });
+  return out.filter(Boolean);
+}
+function listenUI(on) {
+  listening = on;
+  $('#lPlay').classList.toggle('hidden', on);
+  $('#lPause').classList.toggle('hidden', !on); $('#lStop').classList.toggle('hidden', !on);
+  $('#lPause').textContent = 'Pause';
+}
+function stopListening() { listenTok++; paused = false; hush(); listenUI(false); }
+async function startListening(fromPart) {
+  if (!pdf || !curDoc) return;
+  listenTok++; hush();
+  const tok = listenTok, doc = curDoc;
+  listenUI(true); paused = false;
+  let p = curPage, startAt = fromPart || 0;
+  while (tok === listenTok && curDoc === doc && p <= pdf.numPages) {
+    if (p !== curPage) await showPage(p);
+    let text = '';
+    try { ({ text } = await getPageText(doc, p, t => { if (tok === listenTok) $('#lNow').textContent = t + '…'; })); }
+    catch (e) { $('#lNow').textContent = 'Text recognition couldn’t run, so this page can’t be read aloud.'; break; }
+    if (p + 1 <= pdf.numPages) getPageText(doc, p + 1).catch(() => {});
+    const parts = speechChunks(speechText(text));
+    if (!parts.length) $('#lNow').textContent = 'Nothing to read on page ' + p + '.';
+    for (let i = startAt; i < parts.length; i++) {
+      if (tok !== listenTok) { if (paused) resumeFrom = { page: p, part: i }; return; }
+      $('#lNow').textContent = parts[i];
+      const ok = await say(parts[i], tok);
+      if (tok !== listenTok) { if (paused) resumeFrom = { page: p, part: i }; return; }
+      if (!ok) { $('#lNow').textContent = 'Your phone’s voice isn’t available. Check Settings › Text-to-speech output.'; listenUI(false); return; }
+    }
+    startAt = 0; p++;
+  }
+  if (tok === listenTok) { listenUI(false); $('#lNow').textContent = p > pdf.numPages ? 'Finished the book.' : 'Stopped.'; }
+}
+$('#lPlay').onclick = () => startListening(0);
+$('#lStop').onclick = () => { stopListening(); resumeFrom = null; $('#lNow').textContent = 'Stopped.'; };
+$('#lPause').onclick = () => {
+  if (!paused) { paused = true; listenTok++; hush(); $('#lPause').textContent = 'Resume'; }
+  else if (resumeFrom) { const r = resumeFrom; resumeFrom = null; if (r.page !== curPage) showPage(r.page); startListening(r.part); }
+  else startListening(0);
+};
+$('#lRate').value = String(S.rate || 1);
+$('#lRate').addEventListener('change', e => { S.rate = parseFloat(e.target.value) || 1; save(); });
+
+/* ---------- Requests to Margin in Claude ---------- */
+async function packPage(obj) {
+  const stream = new Blob([new TextEncoder().encode(JSON.stringify(obj))]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+const REQ_LABEL = { find: 'Finding concepts', quiz: 'Making a quiz', pooh: 'Writing a Pooh story' };
+document.querySelectorAll('[data-req]').forEach(btn => btn.onclick = async () => {
+  if (!curDoc) return;
+  const action = btn.dataset.req, msg = $('#reqMsg');
+  document.querySelectorAll('[data-req]').forEach(b => b.disabled = true);
+  try {
+    msg.textContent = 'Getting this page’s text…';
+    const { text } = await getPageText(curDoc, curPage, t => { msg.textContent = t + '…'; });
+    let clean = speechText(text);
+    if (clean.replace(/\s/g, '').length < 40) { msg.textContent = 'There isn’t enough text on this page.'; return; }
+    if (clean.length > 3500) clean = clean.slice(0, 3500);
+    // n is a one-time request id, so reopening the same link later doesn't repeat the work.
+    const token = await packPage({ t: curDoc.title, p: curPage, x: clean, n: uid() });
+    stopListening();
+    openClaude('req.' + action + '.' + token);
+    msg.textContent = REQ_LABEL[action] + ' in Claude. Close it to come back here.';
+  } catch (e) {
+    msg.textContent = 'Couldn’t read this page’s text, so nothing was sent.';
+  } finally { document.querySelectorAll('[data-req]').forEach(b => b.disabled = false); }
+});
+
+renderShelf();
+</script>
+</body>
+</html>
