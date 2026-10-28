@@ -25,7 +25,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: ./gradlew --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug
 
       - name: Upload Debug APK as Artifact
         uses: actions/upload-artifact@v4
@@ -36,7 +36,7 @@ jobs:
 
       - name: Build Release APK
         if: startsWith(github.ref, 'refs/tags/')
-        run: ./gradlew --no-daemon assembleRelease
+        run: gradle --no-daemon assembleRelease
 
       - name: Upload Release APK to Release
         if: startsWith(github.ref, 'refs/tags/')
