@@ -26,6 +26,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
     private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private var pageLoaded = false
+    private val pending = ArrayDeque<String>()
+    private var lastClip: String? = null
 
     private val pickPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         fileCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
@@ -51,6 +54,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         web.settings.mediaPlaybackRequiresUserGesture = false
 
         web.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String?) {
+                pageLoaded = true
+                flushPending()
+            }
+
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 loader.shouldInterceptRequest(request.url)
 
@@ -90,7 +98,48 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         })
 
+        handleIntent(intent)
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    // Results from Margin in Claude arrive as margin://result?d=<packed>.
+    private fun handleIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "margin") return
+        data.getQueryParameter("d")?.let { deliver(it) }
+    }
+
+    // Fallback: the artifact also copies the result as "MARGIN-APP-1:<packed>"; import it when the app is foregrounded.
+    override fun onResume() {
+        super.onResume()
+        web.post {
+            try {
+                val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()?.trim()
+                if (text != null && text.startsWith("MARGIN-APP-1:") && text != lastClip) {
+                    lastClip = text
+                    deliver(text.removePrefix("MARGIN-APP-1:"))
+                }
+            } catch (e: Exception) { }
+        }
+    }
+
+    private fun deliver(packed: String) {
+        pending.addLast(packed)
+        flushPending()
+    }
+
+    private fun flushPending() {
+        if (!pageLoaded) return
+        while (pending.isNotEmpty()) {
+            val quoted = JSONObject.quote(pending.removeFirst())
+            web.evaluateJavascript("window.__fromClaude && window.__fromClaude($quoted)", null)
+        }
     }
 
     override fun onInit(status: Int) {

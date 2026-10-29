@@ -90,7 +90,21 @@ select,input[type=number]{font:inherit;color:var(--ink);background:var(--card);b
         <button class="ghost" data-req="quiz">Quiz me on this page</button>
         <button class="ghost" data-req="pooh">Pooh story</button>
       </div>
-      <p class="muted small-t" style="margin:10px 0 0" id="reqMsg">Sends this page’s text, recognized on your phone, to Margin in Claude, which does the job right away. Close it to come back here.</p>
+      <p class="muted small-t" style="margin:10px 0 0" id="reqMsg">Sends this page’s text, recognized on your phone, to Margin in Claude, which does the job right away. When it finishes, tap “Send to Margin app” there and the result shows up under this page.</p>
+    </div>
+
+    <div class="panel hidden" id="results">
+      <h2>From Claude</h2>
+      <div id="resStory" class="hidden">
+        <p class="muted small-t" id="resStoryFor" style="margin:0 0 6px"></p>
+        <div id="resStoryBody" style="font-family:var(--serif);line-height:1.7"></div>
+        <div class="row" style="margin-top:10px"><button class="small" id="resSpeak">Read story aloud</button><button class="small ghost" id="resRemoveStory">Remove</button></div>
+      </div>
+      <div id="resConcepts" class="hidden" style="margin-top:12px">
+        <b style="font-family:var(--serif)">Concepts on this page</b>
+        <div id="resConceptList"></div>
+        <div class="row" style="margin-top:10px"><button class="small ghost" id="resRemoveConcepts">Remove</button></div>
+      </div>
     </div>
 
     <div class="panel">
@@ -206,6 +220,7 @@ async function showPage(p) {
   curPage = p; curDoc.lastPage = p; save();
   $('#pageNum').value = p;
   $('#prev').disabled = p <= 1; $('#next').disabled = p >= pdf.numPages;
+  renderResults();
   try {
     if (renderTask) { renderTask.cancel(); renderTask = null; }
     $('#pageLoading').classList.remove('hidden');
@@ -344,7 +359,7 @@ function listenUI(on) {
   $('#lPause').classList.toggle('hidden', !on); $('#lStop').classList.toggle('hidden', !on);
   $('#lPause').textContent = 'Pause';
 }
-function stopListening() { listenTok++; paused = false; hush(); listenUI(false); }
+function stopListening() { listenTok++; paused = false; hush(); listenUI(false); storySpeaking = false; const rs = document.getElementById('resSpeak'); if (rs) rs.textContent = 'Read story aloud'; }
 async function startListening(fromPart) {
   if (!pdf || !curDoc) return;
   listenTok++; hush();
@@ -402,11 +417,71 @@ document.querySelectorAll('[data-req]').forEach(btn => btn.onclick = async () =>
     const token = await packPage({ t: curDoc.title, p: curPage, x: clean, n: uid() });
     stopListening();
     openClaude('req.' + action + '.' + token);
-    msg.textContent = REQ_LABEL[action] + ' in Claude. Close it to come back here.';
+    msg.textContent = REQ_LABEL[action] + ' in Claude. When it’s done, tap “Send to Margin app” there to bring it back.';
   } catch (e) {
     msg.textContent = 'Couldn’t read this page’s text, so nothing was sent.';
   } finally { document.querySelectorAll('[data-req]').forEach(b => b.disabled = false); }
 });
+
+/* ---------- Results coming back from Margin in Claude ---------- */
+S.results = S.results || {}; S.seenIds = S.seenIds || [];
+const resKey = (book, p, k) => k + '|' + book + '|' + p;
+async function unpackResult(b64) {
+  b64 = b64.replace(/^MARGIN-APP-1:/, '').replace(/-/g, '+').replace(/_/g, '/'); while (b64.length % 4) b64 += '=';
+  const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text());
+}
+window.__fromClaude = async packed => {
+  let d;
+  try { d = await unpackResult(String(packed)); } catch (e) { return; }
+  if (!d || (d.k !== 'story' && d.k !== 'concepts') || !d.book || !d.p) return;
+  if (d.id && S.seenIds.includes(d.id)) return;
+  if (d.id) S.seenIds = S.seenIds.concat(d.id).slice(-200);
+  S.results[resKey(d.book, d.p, d.k)] = d;
+  const keys = Object.keys(S.results); if (keys.length > 60) delete S.results[keys[0]];
+  save();
+  const doc = S.docs.find(x => x.title === d.book);
+  if (!doc) return;
+  doc.lastPage = Number(d.p) || doc.lastPage; save();
+  if (curDoc && curDoc.id === doc.id) showPage(doc.lastPage);
+  else openBook(doc);
+};
+function renderResults() {
+  const box = $('#results');
+  if (!curDoc) { box.classList.add('hidden'); return; }
+  const st = S.results[resKey(curDoc.title, curPage, 'story')], cs = S.results[resKey(curDoc.title, curPage, 'concepts')];
+  box.classList.toggle('hidden', !st && !cs);
+  $('#resStory').classList.toggle('hidden', !st);
+  if (st) {
+    $('#resStoryFor').textContent = 'A Hundred Acre Wood story about page ' + curPage + (st.about ? ': ' + st.about : '');
+    const body = $('#resStoryBody'); body.textContent = '';
+    String(st.text || '').split(/\n+/).map(x => x.trim()).filter(Boolean).forEach((t, i) => {
+      const el = document.createElement(i === 0 ? 'h3' : 'p'); el.style.margin = i === 0 ? '0 0 8px' : '0 0 10px';
+      el.textContent = t.replace(/^#+\s*/, '').replace(/^\*\*(.*)\*\*$/, '$1'); body.appendChild(el);
+    });
+  }
+  $('#resConcepts').classList.toggle('hidden', !cs);
+  const list = $('#resConceptList'); list.textContent = '';
+  if (cs) (cs.items || []).forEach(c => {
+    const dt = document.createElement('details'); dt.style.margin = '8px 0';
+    const sm = document.createElement('summary'); sm.style.cursor = 'pointer'; sm.textContent = c.n + (c.k ? ' (' + c.k + ')' : '');
+    const s = document.createElement('p'); s.style.cssText = 'margin:6px 0;font-family:var(--serif)'; s.textContent = c.s || '';
+    dt.append(sm, s);
+    if (c.i) { const i = document.createElement('p'); i.className = 'muted small-t'; i.style.margin = '0 0 6px'; i.textContent = c.i; dt.appendChild(i); }
+    list.appendChild(dt);
+  });
+}
+let storySpeaking = false;
+$('#resSpeak').onclick = async () => {
+  if (storySpeaking) { stopListening(); return; }
+  const st = curDoc && S.results[resKey(curDoc.title, curPage, 'story')]; if (!st) return;
+  stopListening(); storySpeaking = true; $('#resSpeak').textContent = 'Stop reading';
+  const tok = listenTok;
+  for (const part of speechChunks(String(st.text).replace(/\n+/g, '\n'))) { if (tok !== listenTok) break; if (!(await say(part, tok))) break; }
+  storySpeaking = false; $('#resSpeak').textContent = 'Read story aloud';
+};
+$('#resRemoveStory').onclick = () => { if (!curDoc) return; delete S.results[resKey(curDoc.title, curPage, 'story')]; save(); stopListening(); renderResults(); };
+$('#resRemoveConcepts').onclick = () => { if (!curDoc) return; delete S.results[resKey(curDoc.title, curPage, 'concepts')]; save(); renderResults(); };
 
 renderShelf();
 </script>
